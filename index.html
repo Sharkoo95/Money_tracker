@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#111827">
+<link rel="manifest" href="manifest.json">
+<title>Money Tracker</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f5f7fb;color:#172033}
+.container{max-width:1050px;margin:auto;padding:22px}.card{background:#fff;border-radius:18px;padding:20px;box-shadow:0 5px 22px #0000000d;margin-bottom:18px}
+h1,h2{margin:0 0 14px}.muted{color:#6b7280;font-size:14px}.hidden{display:none}
+input,select,button{font:inherit;padding:11px 12px;border-radius:10px;border:1px solid #d7dce5}
+button{cursor:pointer;border:0;background:#111827;color:#fff}.secondary{background:#e9edf4;color:#172033}.danger{background:#dc2626}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+.summary{padding:18px;border-radius:15px;background:#f8fafc}.summary b{font-size:25px;display:block;margin-top:6px}
+.tabs{display:flex;gap:8px;margin-bottom:15px}.tabs button.active{background:#111827;color:#fff}.tabs button:not(.active){background:#e9edf4;color:#172033}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.right{margin-left:auto}
+table{width:100%;border-collapse:collapse}th,td{padding:11px 8px;border-bottom:1px solid #edf0f5;text-align:left}th{font-size:13px;color:#6b7280}
+.pos{color:#15803d;font-weight:700}.neg{color:#dc2626;font-weight:700}.small{padding:7px 9px;font-size:13px}
+.login{max-width:420px;margin:8vh auto}
+.notice{padding:11px 13px;border-radius:10px;background:#eef5ff;margin-bottom:12px}
+@media(max-width:650px){.container{padding:12px}th:nth-child(1),td:nth-child(1){display:none}table{font-size:13px}}
+</style>
+</head>
+<body>
+<div id="loginView" class="container">
+  <div class="card login">
+    <h1>Money Tracker</h1>
+    <p class="muted">Sign in to access your personal money records.</p>
+    <div class="notice">Prototype mode: this version stores demo account data in this browser. Real cloud authentication will be connected in the next step.</div>
+    <div id="loginMsg" class="muted"></div>
+    <input id="email" type="email" placeholder="Email" style="width:100%;margin:6px 0">
+    <input id="password" type="password" placeholder="Password" style="width:100%;margin:6px 0">
+    <div class="row" style="margin-top:8px">
+      <button onclick="login()">Login</button>
+      <button class="secondary" onclick="signup()">Create account</button>
+    </div>
+  </div>
+</div>
+
+<div id="appView" class="hidden">
+<div class="container">
+  <div class="row" style="margin-bottom:15px">
+    <div><h1>Money Tracker</h1><div class="muted" id="userLabel"></div></div>
+    <button class="secondary right" onclick="logout()">Logout</button>
+  </div>
+
+  <div class="grid">
+    <div class="summary"><span>My Money</span><b id="myTotal">₹0.00</b></div>
+    <div class="summary"><span>Parents Money</span><b id="parentTotal">₹0.00</b></div>
+    <div class="summary"><span>Grand Total</span><b id="grandTotal">₹0.00</b></div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <div class="tabs">
+      <button id="myTab" class="active" onclick="switchTab('my')">My Money</button>
+      <button id="parentTab" onclick="switchTab('parents')">Parents Money</button>
+    </div>
+
+    <div class="row" style="margin-bottom:15px">
+      <input id="startBalance" type="number" step="0.01" placeholder="Starting balance">
+      <button onclick="saveStart()">Save starting balance</button>
+      <span class="muted">Use + amount for money received and − amount for money used.</span>
+    </div>
+
+    <div class="grid">
+      <input id="date" type="date">
+      <input id="amount" type="number" step="0.01" placeholder="Amount (+ / -)">
+      <input id="reason" placeholder="Reason">
+      <button onclick="addTransaction()">Add transaction</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 id="tableTitle">My Money Transactions</h2>
+    <div style="overflow:auto">
+      <table>
+        <thead><tr><th>Date</th><th>Amount</th><th>Reason</th><th>Remaining</th><th>Action</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <p id="empty" class="muted">No transactions yet.</p>
+  </div>
+</div>
+</div>
+
+<script>
+let currentUser=null, active='my', editingId=null;
+const KEY='moneyTrackerPrototypeV1';
+
+function users(){return JSON.parse(localStorage.getItem(KEY)||'{}')}
+function saveUsers(u){localStorage.setItem(KEY,JSON.stringify(u))}
+function login(){
+  const e=email.value.trim().toLowerCase(), p=password.value;
+  const u=users();
+  if(!u[e] || u[e].password!==p){loginMsg.textContent='Invalid login. Create an account first if needed.';return}
+  currentUser=e; localStorage.setItem('moneySession',e); showApp();
+}
+function signup(){
+  const e=email.value.trim().toLowerCase(), p=password.value;
+  if(!e||!p){loginMsg.textContent='Enter email and password.';return}
+  const u=users(); if(u[e]){loginMsg.textContent='Account already exists.';return}
+  u[e]={password:p,my:{start:0,tx:[]},parents:{start:0,tx:[]}}; saveUsers(u);
+  currentUser=e; localStorage.setItem('moneySession',e); showApp();
+}
+function logout(){currentUser=null;localStorage.removeItem('moneySession');appView.classList.add('hidden');loginView.classList.remove('hidden')}
+function showApp(){loginView.classList.add('hidden');appView.classList.remove('hidden');userLabel.textContent=currentUser;render()}
+function data(){return users()[currentUser]}
+function saveData(d){const u=users();u[currentUser]=d;saveUsers(u)}
+function switchTab(t){active=t;myTab.classList.toggle('active',t==='my');parentTab.classList.toggle('active',t==='parents');render()}
+function money(n){return '₹'+Number(n).toFixed(2)}
+function balance(type){
+  const d=data()[type]; return Number(d.start||0)+d.tx.reduce((s,x)=>s+Number(x.amount),0)
+}
+function saveStart(){
+  const d=data(); d[active].start=Number(startBalance.value||0); saveData(d); render();
+}
+function addTransaction(){
+  const a=Number(amount.value), r=reason.value.trim(), dt=date.value;
+  if(!dt||!Number.isFinite(a)||a===0||!r){alert('Please enter date, a non-zero amount, and reason.');return}
+  const d=data(); d[active].tx.push({id:crypto.randomUUID(),date:dt,amount:a,reason:r}); saveData(d);
+  amount.value='';reason.value='';render();
+}
+function del(id){
+  if(!confirm('Delete this transaction? This will recalculate the remaining balances.')) return;
+  const d=data(); d[active].tx=d[active].tx.filter(x=>x.id!==id); saveData(d); render();
+}
+function edit(id){
+  const d=data(), x=d[active].tx.find(x=>x.id===id); if(!x)return;
+  const nd=prompt('Date (YYYY-MM-DD):',x.date); if(nd===null)return;
+  const na=prompt('Amount (+ / -):',x.amount); if(na===null)return;
+  const nr=prompt('Reason:',x.reason); if(nr===null)return;
+  const n=Number(na); if(!nd||!nr||!Number.isFinite(n)||n===0){alert('Invalid values.');return}
+  x.date=nd;x.amount=n;x.reason=nr;saveData(d);render();
+}
+function render(){
+  const d=data(), mt=balance('my'), pt=balance('parents');
+  myTotal.textContent=money(mt);parentTotal.textContent=money(pt);grandTotal.textContent=money(mt+pt);
+  const cur=d[active]; startBalance.value=cur.start||0;
+  tableTitle.textContent=(active==='my'?'My Money':'Parents Money')+' Transactions';
+  const sorted=[...cur.tx].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+  let running=Number(cur.start||0);
+  tbody.innerHTML='';
+  sorted.forEach(x=>{
+    running+=Number(x.amount);
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${x.date}</td><td class="${x.amount>=0?'pos':'neg'}">${x.amount>=0?'+':''}${money(x.amount)}</td><td>${escapeHtml(x.reason)}</td><td>${money(running)}</td><td><button class="small secondary" onclick="edit('${x.id}')">Edit</button> <button class="small danger" onclick="del('${x.id}')">Delete</button></td>`;
+    tbody.appendChild(tr);
+  });
+  empty.style.display=sorted.length?'none':'block';
+}
+function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
+date.valueAsDate=new Date();
+const session=localStorage.getItem('moneySession');
+if(session && users()[session]){currentUser=session;showApp()}
+</script>
+</body>
+</html>
